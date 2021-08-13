@@ -1,0 +1,265 @@
+clear all; clc; close all;
+%% settings
+%Q-learning settings 
+iter_limit = 5000;
+episodes = 1000;
+learningRate = 0.9; 
+epsilon = 0; 
+decay = 0.99; 
+discount = 0.9; 
+
+%Discretization settings 
+dt = 0.1; 
+state_angle = -pi:0.1:pi; 
+state_rate  = -pi:0.1:pi;
+
+%model settings
+torque_setting = 2;
+
+%visualization settings
+show_every=1000; %show full learning run every N episodes 
+
+%% Q-learning initilaziation 
+actions =[0, -torque_setting, torque_setting];
+
+length_state_angle = length(state_angle);
+length_state_rate = length(state_rate);
+
+ind=1;
+for i = 1:length_state_angle
+    for j = 1:length_state_rate
+    states(ind,1) = state_angle(i);
+    states(ind,2) = state_rate(j);
+    ind=ind+1;
+    end
+end
+
+% initialize rewards 
+R = rewardFunction(states(:,1),states(:,2));
+
+% initialize Q table
+Q = zeros(length(R),length(actions));
+
+%start values for figure initialization
+time = 0;
+episode=1;
+
+fig1 = figure('Units', 'normalized', 'Position', [0.004166666666667,0.628703703703704,0.384375,0.292592592592593]);
+   subplot(1,2,1); hold on; 
+    fig_animation=plot(0,0,'k',0, -1,'.k','MarkerSize',20);
+    fig_episode_text=text(-1.4, 2.17, [' eps = ', num2str(episode)]);
+    fig_timer_text=text(-1.4, 1.90, [' t = ', num2str(time)]);
+    axis equal;
+    xlim([-1.5 1.5]);
+    ylim([-1.5 2.5]); 
+    xlabel('x [m]'); 
+    ylabel('y [m]');
+    fig_rectangle=rectangle('Position',[-0.05 -0.05 0.1 0.1],'FaceColor','k');
+    h = zeros(3, 1);
+    h(1) = plot(NaN,NaN,'sg','MarkerFaceColor','green');
+    h(2) = plot(NaN,NaN,'sr','MarkerFaceColor','red');
+    h(3) = plot(NaN,NaN,'sk','MarkerFaceColor','black');
+    lgnd = legend(h, 'CCW torque','CW torque','no torque');
+    set(lgnd,'color','none');
+    legend boxoff
+
+    subplot(1,2,2); hold on; grid on; 
+    fig_timeplot=plot(0,0,'k',0,0,'b',0,0,'r');
+    xlim([ 0 iter_limit*dt]);
+    ylim([-1.5*pi 1.5*pi]); 
+    xlabel('time [s]');
+    ylabel('amplitude [-]');
+    legend('applied torque [Nm]','angle [rad]','angular velocity [rad/s]');
+    hold off; 
+    
+fig2 = figure('Units', 'normalized', 'Position', [0.390104166666667,0.498148148148148,0.291666666666667,0.423148148148148]);
+    fig_stateplot1=plot(0,0,'.','MarkerSize',1,'Color', [192 192 192]./255); hold on; axis equal;
+    fig_stateplot2=plot(-pi,0,'.g','MarkerSize',20);
+    fig_stateplot3=plot(pi,0,'.g','MarkerSize',20);
+    fig_stateplot4=plot(0,0,'.b','MarkerSize',1); 
+    fig_stateplot5=plot(0,0,'.k','MarkerSize',20);
+
+    xlim([state_angle(1)-0.05 state_angle(end)+0.05]);
+    ylim([state_rate(1)  state_rate(end)]);
+    xlabel('angle [rad]');
+    ylabel('angulare rate [rad/sec]'); 
+    hold off;
+
+fig3 = figure('Units', 'normalized', 'Position', [0.003645833333333,0.071296296296296,0.384895833333333,0.476851851851852]);
+    subplot(3,1,1);
+    fig_rewardplot=plot(0,0,'r');
+    xlabel('episode');
+    ylabel('average reward [-]');
+    
+    subplot(3,1,2); 
+    fig_succesplot_yes_no=plot(0,0,'.r'); 
+    xlabel('episode')
+    ylabel('reached goal yes/no [-]')
+    
+    subplot(3,1,3);
+    fig_succesplot_time=plot(0,0,'.r');
+    xlabel('episode')
+    ylabel('time until first goal')
+           
+x1_save_all_episodes=[];
+x2_save_all_episodes=[];
+
+%% start Q-learning
+for j=1:episodes 
+    disp(j) %to keep track on episode number; 
+   
+    %resets at next episode
+    iter = 1; 
+    time = 0;
+    next_initial = [pi 0]; % [angle [rad] , angular velocity [rad/sec]]; pointing down with 0 rad/s
+    reached_goal=0;
+    succes(j)=0;
+    
+    x1_save_single_episode=[];
+    x2_save_single_episode=[];
+    time_save_single_episode=[];
+    torque_save_single_episode=[];
+    
+    while iter < iter_limit  
+    
+    % interpolate current state within state list     
+    state_index = interpolate_states(states, next_initial);
+        
+    if  rand()>epsilon  
+       [~,action_index] = max(Q(state_index,:)); 
+    else
+        action_index = randi(length(actions),1); 
+    end
+        
+    torque = actions(action_index);
+    
+    runtime = [time time+dt]; %sec
+    initial = [next_initial]; % [angle [rad] , angular velocity [rad/sec]]; 
+    [t, x] = ode45(@(t,x) odefcn(t,x,torque), runtime, initial); % x(:,1)= angle [rad], x(:,2) = ang vel [rad/sec]
+
+        if x(end,1) > pi
+           x(end,1) = x(end,1)-2*pi;
+        elseif x(end,1) < -pi
+               x(end,1) = x(end,1)+2*pi;
+        end
+
+    next_initial = [x(end,1) x(end,2)];
+    
+    % reached goal? 
+    if norm([x(end,1) x(end,2)])<0.05 
+       if reached_goal == 0
+          reached_goal = 1;
+          succes(j) = 1; 
+          time_succes(j) = time+dt;
+       end      
+    else
+       if reached_goal == 0
+          succes(j) = 0;
+          time_succes(j)= 0;
+       end
+    end
+        
+    %find index
+    new_state_index = interpolate_states(states, next_initial);
+
+    %update Q table
+    Q(state_index,action_index) = Q(state_index,action_index) + learningRate * ( R(new_state_index) + discount*max(Q(new_state_index,:)) - Q(state_index,action_index));  
+    
+    reward(iter)=R(new_state_index);
+    
+    time = time + dt ; 
+    iter = iter + 1  ;
+    
+    %Convert angle to conventional equations of motion
+    x1_timestep=x(end,1)-pi;
+    x1_timestep(x1_timestep<-pi)=x1_timestep+2*pi;
+    
+    x1_save_single_episode   = [x1_save_single_episode x1_timestep];   % angle
+    x2_save_single_episode   = [x2_save_single_episode x(end,2)];   % angular velocity 
+    time_save_single_episode = [time_save_single_episode time+dt];
+    torque_save_single_episode=[torque_save_single_episode torque];
+
+    if mod(j,show_every)==0
+         
+        set(fig_stateplot1, 'XDATA',[x1_save_all_episodes]);
+        set(fig_stateplot1, 'YDATA',[x2_save_all_episodes]);
+        
+        set(fig_animation(1),'XData',[0  sin(x1_timestep)]);
+        set(fig_animation(1),'YData',[0 -cos(x1_timestep)]);
+        set(fig_animation(2),'XData',    sin(x1_timestep));
+        set(fig_animation(2),'YData',   -cos(x1_timestep));
+
+        set(fig_timer_text,'String', [' t = ', num2str(time)]);
+        set(fig_episode_text,'String', [' eps = ', num2str(j)]);
+
+        if torque > 0
+            set(fig_rectangle,'FaceColor','g');
+        elseif torque == 0
+            set(fig_rectangle,'FaceColor','k');   
+        elseif torque < 0
+            set(fig_rectangle,'FaceColor','r');    
+        end
+
+        set(fig_timeplot(2),'XData',[time_save_single_episode]);
+        set(fig_timeplot(2),'YData',[x1_save_single_episode]);
+        set(fig_timeplot(3),'XData',[time_save_single_episode]);
+        set(fig_timeplot(3),'YData',[x2_save_single_episode]);
+        set(fig_timeplot(1),'XData',[time_save_single_episode]);
+        set(fig_timeplot(1),'YData',[torque_save_single_episode]);
+
+        set(fig_stateplot4, 'XDATA',[x1_save_single_episode]);
+        set(fig_stateplot4, 'YDATA',[x2_save_single_episode]);
+        set(fig_stateplot5, 'XDATA',[x1_save_single_episode(end)]);
+        set(fig_stateplot5, 'YDATA',[x2_save_single_episode(end)]);
+        pause(0.000001);
+    end
+    
+    end
+    
+epsilon = epsilon*decay;
+
+reward_average(j)=mean(reward);
+set(fig_rewardplot, 'XDATA',1:j);    
+set(fig_rewardplot, 'YDATA',[reward_average]);
+
+set(fig_succesplot_yes_no, 'XDATA',1:j);
+set(fig_succesplot_yes_no, 'YDATA',succes);
+
+set(fig_succesplot_time, 'XDATA',1:j);
+set(fig_succesplot_time, 'YDATA',time_succes);
+
+drawnow;
+
+if mod(j,show_every)==0
+         
+        set(fig_stateplot1, 'XDATA',[x1_save_all_episodes]);
+        set(fig_stateplot1, 'YDATA',[x2_save_all_episodes]);
+        
+end
+
+x1_save_all_episodes=[x1_save_all_episodes x1_save_single_episode];
+x2_save_all_episodes=[x2_save_all_episodes x2_save_single_episode];
+
+if length(x1_save_all_episodes) > iter*10 %to avoid to large arrays and mem problems
+   x1_save_all_episodes=x1_save_all_episodes(iter*10:end);
+   x2_save_all_episodes=x2_save_all_episodes(iter*10:end);
+end
+    
+end
+
+function R = rewardFunction(angle, rate)
+R=-(angle.^2) -0.1*(rate.^2);
+end
+
+function state_index = interpolate_states(states_list, state)
+        err = abs(states_list(:,1)-state(1))+abs(states_list(:,2)-state(2));
+        [~,state_index] = min(err);
+end
+
+function dydt=odefcn(t,x,torque)
+l = 1;      
+g = 9.81;
+dydt(1) = x(2);
+dydt(2) = g / l * sin( x(1)) + torque;
+dydt = dydt'; 
+end
