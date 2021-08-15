@@ -151,13 +151,11 @@ for j=1:episodes
     
     if rod2_y > 1
        reached_goal = 1;
-       bonus = 0;
        succes(j) = 1; 
        time_succes(j) = time;
     else
        if  reached_goal ~= 1
            reached_goal = 0; 
-           bonus = -1;
            succes(j) = 0;
            time_succes(j)= 0;
        end
@@ -165,7 +163,7 @@ for j=1:episodes
     
     snewIdx = interpolate_states(states, next_initial);
 
-    Q(state_index,action_index) = Q(state_index,action_index) + learningRate * ( R(snewIdx) + discount*max(Q(snewIdx,:)) - Q(state_index,action_index)+bonus);  
+    Q(state_index,action_index) = Q(state_index,action_index) + learningRate * ( R(snewIdx) + discount*max(Q(snewIdx,:)) - Q(state_index,action_index));  
     
     reward(iter)=R(snewIdx);
     
