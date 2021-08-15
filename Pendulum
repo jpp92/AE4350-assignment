@@ -4,7 +4,7 @@ clear all; clc; close all;
 iter_limit = 5000;
 episodes = 1000;
 learningRate = 0.9; 
-epsilon = 0; 
+epsilon = 0.9; 
 decay = 0.99; 
 discount = 0.9; 
 
